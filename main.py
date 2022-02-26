@@ -2,6 +2,11 @@ import ccxt
 import config
 import schedule
 import pandas as pd
+import pandas_ta as ta
+import talib as ta
+from time import ctime
+
+
 pd.set_option('display.max_rows', None)
 pd.set_option('display.max_columns', None)
 
@@ -17,47 +22,73 @@ exchange = ccxt.binance({
 })
 exchange.set_sandbox_mode(True)
 
-# calculate heiken ashi Low
-def haLow(row, df):
-        ha_low = min(df.iloc[row]['low'], df.iloc[row]['open'], df.iloc[row]['close'])
-        return ha_low
-
-# calculate heiken ashi High
-def haHigh(row, df): 
-        ha_high = max(df.iloc[row]['high'], df.iloc[row]['open'], df.iloc[row]['close'])
-        return ha_high 
-
-# calculate heiken ashi Open
-def haOp(row, df): 
-        data = df.iloc[row-1]['open'] + df.iloc[row-1]['close']
-        ha_op = data/2
-        return ha_op
-
-# calculate heiken ashi Close
-def haClose(row, df):
-        data = df.iloc[row]['open'] + df.iloc[row]['high'] + df.iloc[row]['low'] + df.iloc[row]['close']
-        ha_close = data/4
-        return ha_close
-
 
 # heiken ashi strategy
-def heiken_ashi(df):
-    for x in range(len(df.index)): 
-        df.at[x, 'low'] = haLow(x, df)
-        df.at[x, 'high'] = haHigh(x, df)
-        df.at[x, 'open'] = haOp(x, df)
-        df.at[x, 'close'] = haClose(x, df)
-        
-    df['in_uptrend'] = True
+def heiken_ashi(df, ema_fast, ema_slow):
 
-    for current in range(1, len(df.index)):
-        previous = current - 1
-        if df['close'][current] > df['close'][previous]:
-            df['in_uptrend'][current] = True
-        elif df['close'][current] < df['close'][previous]:
-            df['in_uptrend'][current] = False
+
+
+
+    df['HA_Close']=(df['open']+ df['high']+ df['low']+ df['close'])/4
+    df['HA_Open']=(df['open']+df['close'])/2   
+    #df['HA_Open'][1:]= (df['HA_Open'].shift(1)+df['HA_Close'].shift(1))/2 
+    for i in range(1, len(df)):
+        df['HA_Open'][i]=(df['HA_Open'][i-1]+df['HA_Close'][i-1])/2 
+    df['HA_High']=df[['HA_Open','HA_Close','high']].max(axis=1)
+    df['HA_Low']=df[['HA_Open','HA_Close','low']].min(axis=1)
+
+    for current in range(20, len(df.index)):
+        if df['HA_Close'][current] > df['HA_Open'][current]:
+            df.at[current, 'white_body'] = True
+            df.at[current, 'black_body'] = False
+        elif df['HA_Close'][current] <= df['HA_Open'][current]:
+            df.at[current, 'white_body'] = False
+            df.at[current, 'black_body'] = True
+
+        if ema_fast[current] > ema_slow[current]:
+            df.at[current, 'uptrend'] = True
+            df.at[current, 'downtrend'] = False
+        elif ema_fast[current] <= ema_slow[current]:
+            df.at[current, 'uptrend'] = False
+            df.at[current, 'downtrend'] = True
+
+        if df['HA_High'][current] == df['HA_Open'][current]:
+            df.at[current, 'has_lower_wick'] = True
+            df.at[current, 'has_upper_wick'] = False
+        elif df['HA_Low'][current] == df['HA_Open'][current]:
+            df.at[current, 'has_lower_wick'] = False
+            df.at[current, 'has_upper_wick'] = True
         else:
-            df['in_uptrend'][current] = df['in_uptrend'][previous]
+            df.at[current, 'has_upper_wick'] = False
+            df.at[current, 'has_lower_wick'] = False
+
+        if df['uptrend'][current] and df['HA_Low'][current-1] <= ema_slow[current] and (df['white_body'][current] and df['has_upper_wick'][current]):
+            df.at[current, 'long_entry'] = True
+            df.at[current, 'short_entry'] = False
+            df.at[current, 'long_exit'] = False
+            df.at[current, 'short_exit'] = False
+        elif df['downtrend'][current] and df['HA_High'][current-1] >= ema_slow[current] and (df['black_body'][current] and df['has_lower_wick'][current]):
+            df.at[current, 'long_entry'] = False
+            df.at[current, 'short_entry'] = True
+            df.at[current, 'long_exit'] = False
+            df.at[current, 'short_exit'] = False
+        elif df['uptrend'][current] and (df['black_body'][current] and df['has_lower_wick'][current]):
+            df.at[current, 'long_entry'] = False
+            df.at[current, 'short_entry'] = False
+            df.at[current, 'long_exit'] = True
+            df.at[current, 'short_exit'] = False
+        elif df['downtrend'][current] and (df['white_body'][current] and df['has_upper_wick'][current]):
+            df.at[current, 'long_entry'] = False
+            df.at[current, 'short_entry'] = False
+            df.at[current, 'long_exit'] = False
+            df.at[current, 'short_exit'] = True
+        else:
+            df.at[current, 'long_entry'] = False
+            df.at[current, 'short_entry'] = False
+            df.at[current, 'long_exit'] = False
+            df.at[current, 'short_exit'] = False
+
+        
     return df
 
 
@@ -65,31 +96,53 @@ def heiken_ashi(df):
 in_position = False
 
 # check buy sell signals
-def check_buy_sell_signals(df):
-    global in_position
+def check_buy_sell_signals(df, stoploss_short, stoploss_long, df_original):
+    global signal_type
 
-    print("checking for buy and sell signals")
-    print(df.tail(5))
     last_row_index = len(df.index) - 1
-    previous_row_index = last_row_index - 1
 
-    if df['in_uptrend'][previous_row_index] and df['in_uptrend'][last_row_index]:
-        print("changed to uptrend, buy")
-        if not in_position:
-            order = exchange.create_market_buy_order('BTCUSDT', 0.05)
+    if df['long_entry'][last_row_index]:
+        print("long entry")
+        if signal_type != "long":
+            order = exchange.create_market_buy_order('BTCUSDT', 0.0005)
             print(order)
-            in_position = True
+            signal_type = "long"
         else:
-            print("already in position, nothing to do")
-    
-    if not df['in_uptrend'][previous_row_index] and not df['in_uptrend'][last_row_index]:
-        if in_position:
-            print("changed to downtrend, sell")
-            order = exchange.create_market_sell_order('BTCUSDT', 0.05)
+            print("already long, nothing to do")
+    if df['short_entry'][last_row_index] or df['high'][last_row_index] >= stoploss_short:
+        if signal_type != "short":
+            print("short entry")
+            order = exchange.create_market_sell_order('BTCUSDT', 0.0005)
             print(order)
-            in_position = False
+            signal_type = "short"
+        else:
+            print("already short, nothing to do")
+    if df['long_exit'][last_row_index] or df['low'][last_row_index] <= stoploss_long:
+        if signal_type != "short" or signal_type != "all":
+            print("long exit")
+            order = exchange.create_market_sell_order('BTCUSDT', 0.0005)
+            print(order)
+            signal_type = "all"
         else:
             print("You aren't in position, nothing to sell")
+    if df['short_exit'][last_row_index]:
+        if signal_type != "long" or signal_type != "all":
+            print("short exit")
+            order = exchange.create_market_buy_order('BTCUSDT', 0.05)
+            print(order)
+            signal_type = "all"
+        else:
+            print("You aren't in position, nothing to sell")
+
+
+
+
+
+signal_type = ''
+
+def calculate_ema (df, period):
+    ema = df['close'].ewm(span=period, adjust=False).mean()
+    return ema
 
 def run_bot():
     print(f"Fetching new bars for {datetime.now().isoformat()}")
@@ -97,9 +150,27 @@ def run_bot():
     df = pd.DataFrame(bars[:-1], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
 
+    df_original = df.copy()
+
+    # stoploss_short = highest(high, 5)
+    # stoploss_long = lowest(low, 5)  
+    stoploss_short = max(df['high'].tail(5))
+    stoploss_long = min(df['low'].tail(5))
+
+    # ema_fast = calculate_ema(df, 10)
+    # ema_slow = calculate_ema(df, 20)
+    ema_fast = ta.EMA(df['close'], timeperiod=10)
+    ema_slow = ta.EMA(df['close'], timeperiod=20)
+
+
     # print(df)
-    heiken_ashi_data = heiken_ashi(df)
-    check_buy_sell_signals(heiken_ashi_data)
+    heiken_ashi_data = heiken_ashi(df, ema_fast, ema_slow)
+    # heiken_ashi_data = heiken_ashi_data.loc[:, ['timestamp', 'uptrend', 'downtrend', 'long_entry', 'short_entry', 'long_exit', 'short_exit']]
+    # print(heiken_ashi_data)
+    # for index, row in heiken_ashi_data.iterrows():
+    #     if row['long_entry'] == True or row['short_entry'] == True or row['long_exit'] == True or row['short_exit'] ==True :
+    #         print(row)
+    check_buy_sell_signals(heiken_ashi_data,stoploss_short,stoploss_long, df_original)
     
     
 
