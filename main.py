@@ -18,7 +18,8 @@ import time
 
 exchange = ccxt.binance({
     "apiKey": config.BINANCE_API_KEY,
-    "secret": config.BINANCE_SECRET_KEY
+    "secret": config.BINANCE_SECRET_KEY,
+    'options': { 'adjustForTimeDifference': True }
 })
 exchange.set_sandbox_mode(True)
 
@@ -62,12 +63,12 @@ def heiken_ashi(df, ema_fast, ema_slow):
             df.at[current, 'has_upper_wick'] = False
             df.at[current, 'has_lower_wick'] = False
 
-        if df['uptrend'][current] and df['HA_Low'][current-1] <= ema_slow[current] and (df['white_body'][current] and df['has_upper_wick'][current]):
+        if df['uptrend'][current] and df['HA_Low'][current-1] <= ema_slow[current] and ((df['white_body'][current] and df['has_upper_wick'][current]) and (df['black_body'][current-1] or df['black_body'][current-2])):
             df.at[current, 'long_entry'] = True
             df.at[current, 'short_entry'] = False
             df.at[current, 'long_exit'] = False
             df.at[current, 'short_exit'] = False
-        elif df['downtrend'][current] and df['HA_High'][current-1] >= ema_slow[current] and (df['black_body'][current] and df['has_lower_wick'][current]):
+        elif df['downtrend'][current] and df['HA_High'][current-1] >= ema_slow[current] and (df['black_body'][current] and df['has_lower_wick'][current] and (df['white_body'][current-1] or df['white_body'][current-2])):
             df.at[current, 'long_entry'] = False
             df.at[current, 'short_entry'] = True
             df.at[current, 'long_exit'] = False
@@ -103,14 +104,14 @@ def check_buy_sell_signals(df, stoploss_short, stoploss_long, df_original):
 
     if df['long_entry'][last_row_index]:
         print("long entry")
-        if signal_type != "long":
+        if signal_type != "long" and (exchange.fetch_balance() >= 0.001):
             order = exchange.create_market_buy_order('BTCUSDT', 0.0005)
             print(order)
             signal_type = "long"
         else:
-            print("already long, nothing to do")
+            print("already long or not enough money nothing to do")
     if df['short_entry'][last_row_index] or df['high'][last_row_index] >= stoploss_short:
-        if signal_type != "short":
+        if signal_type != "short" and (exchange.fetch_balance() >= 0.001):
             print("short entry")
             order = exchange.create_market_sell_order('BTCUSDT', 0.0005)
             print(order)
@@ -118,7 +119,7 @@ def check_buy_sell_signals(df, stoploss_short, stoploss_long, df_original):
         else:
             print("already short, nothing to do")
     if df['long_exit'][last_row_index] or df['low'][last_row_index] <= stoploss_long:
-        if signal_type != "short" or signal_type != "all":
+        if signal_type != "short" or signal_type != "all" and (exchange.fetch_balance() >= 0.001):
             print("long exit")
             order = exchange.create_market_sell_order('BTCUSDT', 0.0005)
             print(order)
@@ -126,13 +127,13 @@ def check_buy_sell_signals(df, stoploss_short, stoploss_long, df_original):
         else:
             print("You aren't in position, nothing to sell")
     if df['short_exit'][last_row_index]:
-        if signal_type != "long" or signal_type != "all":
+        if signal_type != "long" or signal_type != "all" and (exchange.fetch_balance() >= 0.001):
             print("short exit")
-            order = exchange.create_market_buy_order('BTCUSDT', 0.05)
+            order = exchange.create_market_buy_order('BTCUSDT', 0.0005)
             print(order)
             signal_type = "all"
         else:
-            print("You aren't in position, nothing to sell")
+            print("not enough money, nothing to sell")
 
 
 
@@ -170,7 +171,8 @@ def run_bot():
     # for index, row in heiken_ashi_data.iterrows():
     #     if row['long_entry'] == True or row['short_entry'] == True or row['long_exit'] == True or row['short_exit'] ==True :
     #         print(row)
-    check_buy_sell_signals(heiken_ashi_data,stoploss_short,stoploss_long, df_original)
+    print(heiken_ashi_data)
+    # check_buy_sell_signals(heiken_ashi_data,stoploss_short,stoploss_long, df_original)
     
     
 
