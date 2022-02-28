@@ -134,9 +134,6 @@ def check_buy_sell_signals(df, stoploss_short, stoploss_long, df_original):
             signal_type = "long"
         else:
             print("not enough money, nothing to sell")
-    else:
-        print("do nothing")
-        signal_type = "all"
 
 
 
