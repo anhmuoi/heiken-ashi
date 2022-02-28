@@ -110,7 +110,7 @@ def check_buy_sell_signals(df, stoploss_short, stoploss_long, df_original):
             signal_type = "long"
         else:
             print("already long or not enough money nothing to do")
-    elif df['short_entry'][last_row_index] or df['high'][last_row_index] >= stoploss_short:
+    elif df['short_entry'][last_row_index] or (df['high'][last_row_index] >= stoploss_short):
         if signal_type != "short" and (exchange.fetch_balance()['BTC']['free'] >= 0.001):
             print("short entry")
             order = exchange.create_market_sell_order('BTC/USDT', 0.0005)
@@ -118,8 +118,8 @@ def check_buy_sell_signals(df, stoploss_short, stoploss_long, df_original):
             signal_type = "short"
         else:
             print("already short, nothing to do")
-    elif df['long_exit'][last_row_index] or df['low'][last_row_index] <= stoploss_long:
-        if signal_type != "short" or signal_type != "all" and (exchange.fetch_balance()['BTC']['free'] >= 0.001):
+    elif df['long_exit'][last_row_index] or (df['low'][last_row_index] <= stoploss_long):
+        if signal_type != "short"  and (exchange.fetch_balance()['BTC']['free'] >= 0.001):
             print("long exit")
             order = exchange.create_market_sell_order('BTC/USDT', 0.0005)
             print(order)
@@ -127,7 +127,7 @@ def check_buy_sell_signals(df, stoploss_short, stoploss_long, df_original):
         else:
             print("You aren't in position, nothing to sell")     
     elif df['short_exit'][last_row_index]:
-        if signal_type != "long" or signal_type != "all" and (exchange.fetch_balance()['BTC']['free'] >= 0.001):
+        if signal_type != "long" and (exchange.fetch_balance()['BTC']['free'] >= 0.001):
             print("short exit")
             order = exchange.create_market_buy_order('BTC/USDT', 0.0005)
             print(order)
