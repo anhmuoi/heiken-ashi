@@ -63,22 +63,22 @@ def heiken_ashi(df, ema_fast, ema_slow):
             df.at[current, 'has_upper_wick'] = False
             df.at[current, 'has_lower_wick'] = False
 
-        if (df['uptrend'][current] and df['uptrend'][current-1] and df['HA_Low'][current-1] <= ema_slow[current] and ((df['white_body'][current] and df['has_upper_wick'][current]) and (df['black_body'][current-1] or df['black_body'][current-2]))) or (df['downtrend'][current-1] and df['uptrend'][current]):
+        if (df['uptrend'][current] and df['downtrend'][current-1]) or (df['uptrend'][current] and df['black_body'][current-3] and df['black_body'][current-2] and (df['white_body'][current-1] and df['white_body'][current])):
             df.at[current, 'long_entry'] = True
             df.at[current, 'short_entry'] = False
             df.at[current, 'long_exit'] = False
             df.at[current, 'short_exit'] = False
-        elif (df['downtrend'][current] and df['downtrend'][current-1] and df['HA_High'][current-1] >= ema_slow[current] and (df['black_body'][current] and df['has_lower_wick'][current] and (df['white_body'][current-1] or df['white_body'][current-2]))) or (df['uptrend'][current-1] and df['downtrend'][current]):
+        elif (df['downtrend'][current] and df['uptrend'][current-1] or (df['downtrend'][current] and df['white_body'][current-3] and df['white_body'][current-2] and (df['black_body'][current-1] and df['black_body'][current]))):
             df.at[current, 'long_entry'] = False
             df.at[current, 'short_entry'] = True
             df.at[current, 'long_exit'] = False
             df.at[current, 'short_exit'] = False
-        elif df['uptrend'][current] and (df['black_body'][current] and df['has_lower_wick'][current]):
+        elif df['uptrend'][current] and (df['black_body'][current-1] and df['has_lower_wick'][current] and df['black_body'][current]):
             df.at[current, 'long_entry'] = False
             df.at[current, 'short_entry'] = False
             df.at[current, 'long_exit'] = True
             df.at[current, 'short_exit'] = False
-        elif df['downtrend'][current] and (df['white_body'][current] and df['has_upper_wick'][current]):
+        elif df['downtrend'][current] and (df['white_body'][current-1] and df['has_upper_wick'][current] and df['white_body'][current]):
             df.at[current, 'long_entry'] = False
             df.at[current, 'short_entry'] = False
             df.at[current, 'long_exit'] = False
@@ -149,7 +149,7 @@ def run_bot():
     print(f"Fetching new bars for {datetime.now().isoformat()}")
     # order = exchange.create_order(symbol='BTC/USDT',type='market',amount=0.01,side='buy')
     # print(order)
-    bars = exchange.fetch_ohlcv('BTC/USDT', timeframe='5m', limit=100)
+    bars = exchange.fetch_ohlcv('BTC/USDT', timeframe='15m', limit=100)
 
     df = pd.DataFrame(bars[:-1], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
