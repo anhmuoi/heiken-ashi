@@ -63,12 +63,12 @@ def heiken_ashi(df, ema_fast, ema_slow):
             df.at[current, 'has_upper_wick'] = False
             df.at[current, 'has_lower_wick'] = False
 
-        if df['uptrend'][current] and df['HA_Low'][current-1] <= ema_slow[current] and ((df['white_body'][current] and df['has_upper_wick'][current]) and (df['black_body'][current-1] or df['black_body'][current-2])):
+        if (df['uptrend'][current] and df['uptrend'][current-1] and df['HA_Low'][current-1] <= ema_slow[current] and ((df['white_body'][current] and df['has_upper_wick'][current]) and (df['black_body'][current-1] or df['black_body'][current-2]))) or (df['downtrend'][current-1] and df['uptrend'][current]):
             df.at[current, 'long_entry'] = True
             df.at[current, 'short_entry'] = False
             df.at[current, 'long_exit'] = False
             df.at[current, 'short_exit'] = False
-        elif df['downtrend'][current] and df['HA_High'][current-1] >= ema_slow[current] and (df['black_body'][current] and df['has_lower_wick'][current] and (df['white_body'][current-1] or df['white_body'][current-2])):
+        elif (df['downtrend'][current] and df['downtrend'][current-1] and df['HA_High'][current-1] >= ema_slow[current] and (df['black_body'][current] and df['has_lower_wick'][current] and (df['white_body'][current-1] or df['white_body'][current-2]))) or (df['uptrend'][current-1] and df['downtrend'][current]):
             df.at[current, 'long_entry'] = False
             df.at[current, 'short_entry'] = True
             df.at[current, 'long_exit'] = False
@@ -96,6 +96,8 @@ def heiken_ashi(df, ema_fast, ema_slow):
 # đánh dấu khi entry và exit
 in_position = False
 
+signal_type = ''
+
 # check buy sell signals
 def check_buy_sell_signals(df, stoploss_short, stoploss_long, df_original):
     global signal_type
@@ -105,11 +107,12 @@ def check_buy_sell_signals(df, stoploss_short, stoploss_long, df_original):
     if df['long_entry'][last_row_index]:
         print("long entry")
         if signal_type != "long" and (exchange.fetch_balance()['BNB']['free'] >= 0.001):
+            print("long entry")
             order = exchange.create_market_buy_order('BTC/USDT', 0.0005)
             print(order)
             signal_type = "long"
         else:
-            print("already long or not enough money nothing to do")
+            print("already long")
     elif df['short_entry'][last_row_index] or (df['high'][last_row_index] >= stoploss_short):
         if signal_type != "short" and (exchange.fetch_balance()['BTC']['free'] >= 0.001):
             print("short entry")
@@ -117,7 +120,7 @@ def check_buy_sell_signals(df, stoploss_short, stoploss_long, df_original):
             print(order)
             signal_type = "short"
         else:
-            print("already short, nothing to do")
+            print("already short")
     elif df['long_exit'][last_row_index] or (df['low'][last_row_index] <= stoploss_long):
         if signal_type != "short"  and (exchange.fetch_balance()['BTC']['free'] >= 0.001):
             print("long exit")
@@ -125,7 +128,7 @@ def check_buy_sell_signals(df, stoploss_short, stoploss_long, df_original):
             print(order)
             signal_type = "short"
         else:
-            print("You aren't in position, nothing to sell")     
+            print("already short")     
     elif df['short_exit'][last_row_index]:
         if signal_type != "long" and (exchange.fetch_balance()['BTC']['free'] >= 0.001):
             print("short exit")
@@ -133,11 +136,10 @@ def check_buy_sell_signals(df, stoploss_short, stoploss_long, df_original):
             print(order)
             signal_type = "long"
         else:
-            print("not enough money, nothing to sell")
+            print("already long")
 
 
 
-signal_type = ''
 
 def calculate_ema (df, period):
     ema = df['close'].ewm(span=period, adjust=False).mean()
@@ -147,7 +149,7 @@ def run_bot():
     print(f"Fetching new bars for {datetime.now().isoformat()}")
     # order = exchange.create_order(symbol='BTC/USDT',type='market',amount=0.01,side='buy')
     # print(order)
-    bars = exchange.fetch_ohlcv('BTC/USDT', timeframe='1m', limit=100)
+    bars = exchange.fetch_ohlcv('BTC/USDT', timeframe='5m', limit=100)
 
     df = pd.DataFrame(bars[:-1], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
@@ -159,8 +161,8 @@ def run_bot():
     stoploss_short = max(df['high'].tail(5))
     stoploss_long = min(df['low'].tail(5))
 
-    # ema_fast = calculate_ema(df, 10)
-    # ema_slow = calculate_ema(df, 20)
+    # ema_fast = calculate_ema(df, 10), green
+    # ema_slow = calculate_ema(df, 20), red
     ema_fast = ta.EMA(df['close'], timeperiod=10)
     ema_slow = ta.EMA(df['close'], timeperiod=20)
 
